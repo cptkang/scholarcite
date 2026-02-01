@@ -1,0 +1,5 @@
+{
+  "name": "ScholarCite AI",
+  "description": "관련 연구 논문을 찾고, 텍스트에 인용구를 삽입하며, EndNote용 참고문헌 파일을 생성하는 지능형 학술 인용 시스템입니다.",
+  "requestFramePermissions": []
+}
