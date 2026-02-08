@@ -1,5 +1,6 @@
 
 export type JournalGrade = 'ALL' | 'SCI' | 'KCI' | 'SCOPUS' | 'Q1' | 'Q2';
+export type CitationStyle = 'APA' | 'IEEE' | 'Vancouver' | 'Chicago' | 'MLA';
 export type YearRange = string;
 
 export interface Reference {
@@ -20,6 +21,10 @@ export interface CitationResult {
   citedText: string;
   references: Reference[];
   groundingUrls: { title: string; uri: string }[];
+}
+
+export interface SavedCitation extends CitationResult {
+  timestamp: number;
 }
 
 export enum AppStatus {
