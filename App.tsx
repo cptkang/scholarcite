@@ -552,4 +552,20 @@ const ResultCard: React.FC<{res: SavedCitation}> = ({res}) => {
               <p className="text-[11px] text-slate-500 italic mb-4">{ref.authors} ({ref.year})</p>
               
               {/* 원문 근거 표시 (항상 보여줌) */}
-              <div className
+              <div className="bg-white p-5 rounded-2xl border border-slate-100 text-[11px] text-slate-600 italic leading-relaxed border-l-4 border-l-indigo-400 shadow-sm">
+                <span className="block text-[8px] font-black text-indigo-400 uppercase mb-2">Original Paper Evidence:</span>
+                "{ref.originalSourceSentence}"
+              </div>
+            </div>
+          )) : (
+            <div className="p-8 text-center text-slate-400 text-[10px] font-black uppercase tracking-widest bg-slate-100 rounded-[2rem] border border-dashed border-slate-200">
+               No verifiable evidence selected for this result.
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default App;
