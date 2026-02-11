@@ -1,69 +1,65 @@
 
 import { GoogleGenAI } from "@google/genai";
-import { CitationResult, Reference, JournalGrade, YearRange, CitationStyle } from "../types";
+import { CitationResult, Reference, JournalGrade, YearRange, CitationStyle, RevisionMode } from "../types";
 
 export async function processCitations(
   input: string, 
   grade: JournalGrade, 
   style: CitationStyle,
+  mode: RevisionMode,
   yearRange: YearRange,
   sourceContext?: string
 ): Promise<CitationResult> {
-  // 429 오류 완화를 위해 Flash 모델 사용
   const modelName = "gemini-3-flash-preview"; 
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
-  const gradeInstructions: Record<JournalGrade, string> = {
-    'KCI': "반드시 한국학술지인용색인(KCI) 등재지를 최우선으로 검색하세요.",
-    'SCI': "Web of Science(SCI, SCIE) 등재 저널 논문만 인용하십시오.",
-    'Q1': "JCR 상위 25% 이내(Q1) 최상위 저널의 논문을 사용하십시오.",
-    'Q2': "JCR 상위 50% 이내(Q2 이상) 우수 저널을 타겟팅하십시오.",
-    'SCOPUS': "SCOPUS 등재 논문을 활용하십시오.",
-    'ALL': "신뢰할 수 있는 학술적 출처를 폭넓게 검색하십시오."
-  };
-
   const styleInstructions: Record<CitationStyle, string> = {
-    'APA': "본문 내 인용은 반드시 (저자, 연도) 형식을 사용하십시오. 예: (Hong, 2024).",
-    'IEEE': "본문 내 인용은 반드시 [1]과 같은 대괄호 번호 형식을 사용하십시오.",
-    'Vancouver': "본문 내 인용은 (1) 또는 상첨자 번호를 사용하십시오.",
+    'APA': "본문 내 인용은 반드시 (저자, 연도) 형식을 사용하십시오.",
+    'IEEE': "본문 내 인용은 반드시 [1] 형식을 사용하십시오.",
+    'Vancouver': "본문 내 인용은 번호 형식을 사용하십시오.",
     'Chicago': "본문 내 인용은 (저자 연도) 형식을 사용하십시오.",
     'MLA': "본문 내 인용은 (저자) 형식을 사용하십시오."
   };
 
   const systemInstruction = `
-    당신은 전 세계 학술 논문의 인용 및 교정을 담당하는 수석 에디터입니다. 
-    사용자가 제공한 텍스트 또는 '표(Table)' 데이터를 분석하고, Google Scholar 검색을 통해 실존하는 가장 적절한 논문을 찾아 내용을 '학술적으로 재구성'하십시오.
+    당신은 전 세계 학계의 무결성을 수호하는 수석 학술 에디터입니다. 
+    당신의 임무는 사용자의 입력을 분석하여 실존하는 학술적 근거를 바탕으로 문장을 교정하는 것입니다.
 
-    [핵심 요구사항]
-    1. 데이터 분석: 입력값에 표(Table)나 수치 데이터가 포함된 경우, 해당 수치의 의미를 해석하고 이를 뒷받침할 수 있는 학술적 근거(논문)를 찾으십시오.
-    2. 문장 및 표 재구성: 입력된 내용의 의미를 유지하되, 전문적인 한국어 문체로 다시 쓰십시오. 
-       **만약 입력이 표 형식이거나 결과가 데이터 비교를 포함한다면, 'Cited Text' 섹션에 HTML 표 태그(<table>, <tr>, <td> 등)를 사용하여 출력하십시오.**
-    3. 언어 설정: 반드시 모든 'Cited Text'는 한국어(Korean)로 작성하십시오.
-    4. 인용 스타일 엄수: 교정된 문장이나 표 내부의 적절한 위치에 [${style}] 스타일의 인용 표기를 삽입하십시오. (${styleInstructions[style]})
-    5. 출력 구조: 
-       - Cited Text: [교정된 한국어 문장 또는 HTML 표]
-       - ---REFERENCES_START---
-       - [JSON 데이터 배열]
+    [절대 규칙 - 무결성 보장]
+    1. **근거 엄격성**: Google Search를 통해 인용하고자 하는 문장과 직접적으로 연관된 실존 논문의 '정확한 원문(Original Sentence)'을 찾아낸 경우에만 인용을 생성하십시오.
+    2. **인용 생략**: 만약 적절한 실존 근거 문장을 찾지 못했거나, 근거가 불분명한 경우 해당 부분에는 **절대 인용을 삽입하지 마십시오.** (할루시네이션 방지)
+    3. **원문 보존**: 'originalSourceSentence' 필드에는 반드시 논문 원본의 언어(주로 영어)로 된 실제 문장을 기입하십시오.
+    4. **인용 태그**: 본문(Cited Text)에 삽입한 인용 표식(예: [1], (Lee, 2023) 등)을 'citationTag' 필드에 그대로 기입하여 시스템이 추후 필터링할 수 있도록 하십시오.
+
+    [출력 형식]
+    Cited Text: [인용이 포함된 교정된 한국어 문장/표]
     
-    [JSON 데이터 스키마]
+    ---REFERENCES_START---
     [
       { 
         "id": 1, 
-        "title": "논문 제목", 
-        "authors": "대표 저자", 
-        "year": "발행연도", 
-        "journal": "학술지명", 
-        "url": "실제 논문 URL", 
-        "grade": "${grade}",
-        "citationReason": "이 데이터나 문장을 인용하기에 적합한 학술적 근거"
+        "title": "실존하는 논문의 전체 제목", 
+        "authors": "모든 주요 저자 리스트", 
+        "year": "정확한 출판 연도", 
+        "journal": "학술지 또는 컨퍼런스 명칭", 
+        "url": "논문 원문을 확인할 수 있는 실제 URL", 
+        "citationTag": "[1]", 
+        "citationReason": "이 논문의 어떤 내용이 사용자 문장의 근거가 되는지에 대한 학술적 설명 (한국어)",
+        "relatedCitedSentence": "당신이 작성한 'Cited Text' 중 이 논문이 담당하고 있는 구체적인 문장 (한국어)",
+        "originalSourceSentence": "논문 본문에서 직접 발췌한 100% 실제 원문 문장 (원본 언어)",
+        "sourceSection": "원문이 위치한 섹션 (예: INTRODUCTION, DISCUSSION, RESULTS 등)",
+        "sourceParagraph": "원문 문장을 포함한 앞뒤 문맥이 담긴 단락 전체 (원본 언어)"
       }
     ]
+
+    - 스타일: ${styleInstructions[style]}
+    - 재구성 모드: ${mode === 'REFINE' ? "학술적 재구성 (Refine)" : "원본 유지 (Keep Original)"}
   `;
 
   try {
     const response = await ai.models.generateContent({
       model: modelName,
-      contents: `분석할 내용(텍스트 또는 표 데이터): "${input}"\n스타일: ${style}\n목표 등급: ${grade}`,
+      contents: `사용자 입력: "${input}"\n목표 등급: ${grade}\n스타일: ${style}`,
       config: {
         systemInstruction: systemInstruction,
         tools: [{ googleSearch: {} }],
@@ -73,37 +69,51 @@ export async function processCitations(
 
     const fullResponse = response.text || "";
     let citedText = "";
-    let references: Reference[] = [];
+    let rawReferences: any[] = [];
+
+    const extractJsonArray = (text: string) => {
+      const firstBracket = text.indexOf('[');
+      const lastBracket = text.lastIndexOf(']');
+      if (firstBracket !== -1 && lastBracket !== -1 && lastBracket > firstBracket) {
+        return text.substring(firstBracket, lastBracket + 1);
+      }
+      return null;
+    };
 
     if (fullResponse.includes("---REFERENCES_START---")) {
       const parts = fullResponse.split("---REFERENCES_START---");
       citedText = parts[0].replace(/Cited Text[:\s]*/i, "").trim();
-      const jsonPart = parts[1].match(/\[[\s\S]*\]/);
-      if (jsonPart) try { references = JSON.parse(jsonPart[0]); } catch (e) {}
+      const jsonContent = extractJsonArray(parts[1]);
+      if (jsonContent) {
+        try { rawReferences = JSON.parse(jsonContent); } catch (e) { console.error(e); }
+      }
     } else {
-      const jsonMatch = fullResponse.match(/\[\s*{[\s\S]*}\s*\]/);
-      if (jsonMatch) {
-        citedText = fullResponse.split(jsonMatch[0])[0].replace(/Cited Text[:\s]*/i, "").trim();
-        try { references = JSON.parse(jsonMatch[0]); } catch (e) {}
+      const jsonContent = extractJsonArray(fullResponse);
+      if (jsonContent) {
+        citedText = fullResponse.split(jsonContent)[0].replace(/Cited Text[:\s]*/i, "").trim();
+        try { rawReferences = JSON.parse(jsonContent); } catch (e) { console.error(e); }
       } else {
-        citedText = fullResponse.replace(/Cited Text[:\s]*/i, "").trim();
+        citedText = fullResponse.trim();
       }
     }
 
+    const references: Reference[] = Array.isArray(rawReferences) 
+      ? rawReferences
+        .filter(ref => ref.title && ref.originalSourceSentence && ref.citationTag)
+        .map((ref: any) => ({
+          ...ref,
+          isSelected: true,
+          id: ref.id || Math.floor(Math.random() * 1000)
+        })) 
+      : [];
+
     return {
       originalText: input,
-      citedText: citedText || fullResponse,
+      citedText: citedText || "분석 결과를 생성하지 못했습니다.",
       references: references,
-      groundingUrls: response.candidates?.[0]?.groundingMetadata?.groundingChunks?.map((chunk: any) => ({
-        title: chunk.web?.title || "출처",
-        uri: chunk.web?.uri || ""
-      })) || []
+      groundingUrls: []
     };
   } catch (error: any) {
-    if (error?.message?.includes('429') || error?.status === 'RESOURCE_EXHAUSTED') {
-      throw new Error("무료 API 할당량이 초과되었습니다. 사이드바 하단의 '내 전용 API 키 사용' 버튼을 클릭하여 개인 키를 등록해 주세요.");
-    }
-    console.error("Gemini API Error:", error);
     throw error;
   }
 }
